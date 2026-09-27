@@ -314,6 +314,13 @@ void madeira_seed_prefix_if_needed(const char *prefix_path) {
 
         [fm createDirectoryAtPath:prefix withIntermediateDirectories:YES attributes:nil error:nil];
 
+        // Older interrupted installs could leave the marker behind before
+        // creating drive_c. Repair those prefixes on the next launch.
+        NSString *windowsDir = [prefix stringByAppendingPathComponent:@"drive_c/windows"];
+        if ([fm fileExistsAtPath:stamp] && ![fm fileExistsAtPath:windowsDir]) {
+            [fm removeItemAtPath:stamp error:nil];
+        }
+
         if (![fm fileExistsAtPath:stamp]) {
             NSString *tgz = [[NSBundle mainBundle] pathForResource:@"prefix-template" ofType:@"tar.gz"];
             if (!tgz) {

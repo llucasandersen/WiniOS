@@ -35,11 +35,34 @@ struct MadeiraApp: App {
         preparingPrefix = true
         prefixFailed = false
         let ready = await Task.detached(priority: .userInitiated) { () -> Bool in
-            let documents = FileManager.default.urls(for: .documentDirectory,
-                                                      in: .userDomainMask)[0]
+            let fm = FileManager.default
+            let documents = fm.urls(for: .documentDirectory,
+                                    in: .userDomainMask)[0]
             let prefix = documents.appendingPathComponent("wine").path
             prefix.withCString { madeira_seed_prefix_if_needed($0) }
-            return FileManager.default.fileExists(atPath: prefix + "/.update-timestamp")
+            guard fm.fileExists(atPath: prefix + "/.update-timestamp"),
+                  fm.fileExists(atPath: prefix + "/drive_c/windows") else { return false }
+
+            // A locally signed IPA can carry a Steam payload separately from
+            // the standard Wine template. Import it once, even when the user
+            // already has an existing Wine C: drive.
+            if let steamArchive = Bundle.main.path(forResource: "steam-preload", ofType: "tar.gz") {
+                let marker = documents.appendingPathComponent("wine/.steam-preload-complete")
+                if !fm.fileExists(atPath: marker.path) {
+                    let installed = steamArchive.withCString { archive in
+                        prefix.withCString { destination in
+                            madeira_extract_prefix_tgz(archive, destination) == 0
+                        }
+                    }
+                    guard installed else { return false }
+                    do {
+                        try Data("Steam payload extracted\n".utf8).write(to: marker, options: .atomic)
+                    } catch {
+                        return false
+                    }
+                }
+            }
+            return true
         }.value
         preparingPrefix = false
         if ready {
