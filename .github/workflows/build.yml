@@ -87,6 +87,10 @@ jobs:
         run: |
           export PATH="/opt/homebrew/opt/bison/bin:/opt/homebrew/opt/flex/bin:/opt/homebrew/opt/llvm@15/bin:$PATH"
           chmod +x wine/configure || true
+          # The pinned Wine loader includes a missing ARM64EC helper, even when
+          # dependency scanning a native macOS build. This placeholder is used
+          # only to let Wine generate native headers; no PE DLL is built here.
+          touch wine/dlls/ntdll/arm64ec_x64_export_iat.c
           mkdir -p wine/build-macos
           cd wine/build-macos
           ../configure --enable-win64 --without-x --without-freetype || true
