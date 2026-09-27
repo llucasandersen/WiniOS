@@ -73,6 +73,15 @@ if os.path.exists("wine/configure"):
         wc = wc.replace(old_pe_check, '# bypassed PE check: ' + old_pe_check)
         with open("wine/configure", "w", encoding="utf-8") as f:
             f.write(wc)
+print("Patching iOS rusage diagnostic for Xcode 16 SDK...")
+server_ios_cpp = "build/ntdll-unix/server_ios.c"
+with open(server_ios_cpp, "r", encoding="utf-8", errors="ignore") as f:
+    server_ios_source = f.read()
+server_ios_source = server_ios_source.replace(" run=%.0f pgw=%.1f GHz", " run=%.0f GHz")
+server_ios_source = server_ios_source.replace("XP_MS( ru.ri_runnable_time - pru.ri_runnable_time ), XP_MS( ru.ri_page_wait_time_mach - pru.ri_page_wait_time_mach ),", "XP_MS( ru.ri_runnable_time - pru.ri_runnable_time ),")
+with open(server_ios_cpp, "w", encoding="utf-8") as f:
+    f.write(server_ios_source)
+
 print("Patching Wine sync header order...")
 sync_cpp = "wine/dlls/ntdll/unix/sync.c"
 with open(sync_cpp, "r", encoding="utf-8", errors="ignore") as f:
