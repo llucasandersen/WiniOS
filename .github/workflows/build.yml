@@ -179,7 +179,7 @@ jobs:
           cat .github/terminfo_ios.c >> app/Madeira/wine_stubs.c
           xcodebuild -project app/Madeira.xcodeproj \
             -scheme Madeira \
-            -configuration Release \
+            -configuration Debug \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
@@ -223,12 +223,12 @@ jobs:
           codesign -d --entitlements :- build/Payload/Madeira.app || true
           
           cd build
-          zip -r -9 Madeira-Upstream-8c050d0.ipa Payload
+          zip -r -9 Madeira-Upstream-8c050d0-Debug.ipa Payload
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Madeira-Upstream-8c050d0-IPA
-          path: build/Madeira-Upstream-8c050d0.ipa
+          name: Madeira-Upstream-8c050d0-Debug-IPA
+          path: build/Madeira-Upstream-8c050d0-Debug.ipa
           retention-days: 14
 # Source base: willfaust/Madeira 8c050d03f4d89096e1e2e2c8bb44479fffd86619.
