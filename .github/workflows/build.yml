@@ -132,6 +132,11 @@ jobs:
           ls -lh app/Madeira/lib*.a || true
           python3 .github/patch_macho.py app/Madeira/lib*.a || true
 
+      - name: Select Xcode 26 for app build
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+
       - name: Build Madeira 79 Xcode App
         run: |
           xcodebuild -project app/Madeira.xcodeproj \
