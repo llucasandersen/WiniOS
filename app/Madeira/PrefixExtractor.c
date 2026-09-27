@@ -56,6 +56,8 @@ int madeira_extract_prefix_tgz(const char *tgz_path, const char *dest_dir) {
     char header[BLOCK];
     char buf[BLOCK];
     int files = 0, dirs = 0;
+    char deferred_stamp[64];
+    int deferred_stamp_size = -1;
 
     for (;;) {
         int n = gzread(gz, header, BLOCK);
@@ -74,6 +76,33 @@ int madeira_extract_prefix_tgz(const char *tgz_path, const char *dest_dir) {
         memcpy(name, header, 100);
         int size = parse_octal(header + 124, 12);
         char type = header[156];
+
+        // The template carries this marker near the start of the archive.
+        // Write it only after every file has been extracted, so an interrupted
+        // first launch retries instead of treating a partial C: drive as done.
+        if (strcmp(name, "prefix/.update-timestamp") == 0 &&
+            (type == '0' || type == 0)) {
+            if (size < 0 || size > (int)sizeof(deferred_stamp)) {
+                fprintf(stderr, "[prefix-extract] invalid setup marker size\n");
+                gzclose(gz);
+                return -1;
+            }
+            int remaining = size;
+            int copied = 0;
+            while (remaining > 0) {
+                if (gzread(gz, buf, BLOCK) != BLOCK) {
+                    fprintf(stderr, "[prefix-extract] short setup marker read\n");
+                    gzclose(gz);
+                    return -1;
+                }
+                int take = remaining < BLOCK ? remaining : BLOCK;
+                memcpy(deferred_stamp + copied, buf, take);
+                copied += take;
+                remaining -= take;
+            }
+            deferred_stamp_size = size;
+            continue;
+        }
 
         // Strip leading "prefix/" so files land directly under dest_dir.
         const char *relname = name;
@@ -152,6 +181,17 @@ int madeira_extract_prefix_tgz(const char *tgz_path, const char *dest_dir) {
         }
     }
 
+    if (deferred_stamp_size >= 0) {
+        char stamp_path[1200];
+        snprintf(stamp_path, sizeof(stamp_path), "%s/.update-timestamp", dest_dir);
+        int fd = open(stamp_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0 || write(fd, deferred_stamp, deferred_stamp_size) != deferred_stamp_size || close(fd) != 0) {
+            fprintf(stderr, "[prefix-extract] could not write setup marker: %s\n", strerror(errno));
+            if (fd >= 0) close(fd);
+            gzclose(gz);
+            return -1;
+        }
+    }
     gzclose(gz);
     fprintf(stderr, "[prefix-extract] extracted %d files, %d dirs to %s\n", files, dirs, dest_dir);
     return 0;
