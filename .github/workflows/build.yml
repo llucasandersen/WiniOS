@@ -175,6 +175,7 @@ jobs:
 
       - name: Build Madeira upstream Xcode App
         run: |
+          bash build/stage-licenses.sh
           cat .github/terminfo_ios.c >> app/Madeira/wine_stubs.c
           xcodebuild -project app/Madeira.xcodeproj \
             -scheme Madeira \
