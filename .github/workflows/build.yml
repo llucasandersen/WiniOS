@@ -175,3 +175,4 @@ jobs:
           name: WiniOS-GameHub-IPA
           path: build/WiniOS.ipa
           retention-days: 14
+# Registered for fresh IPA builds on this fork.
