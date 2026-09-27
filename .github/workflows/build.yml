@@ -103,7 +103,13 @@ jobs:
           cp include/config.h ../../build/wineserver/config.h || true
           cp include/config.h ../../build/ntdll-unix/config.h || true
           cp include/config.h ../../build/win32u-unix/config.h || true
-          make -j4 include
+          for idl in ../include/*.idl; do
+            header="include/$(basename "$idl" .idl).h"
+            make -s "$header" 2>/dev/null || true
+          done
+          for header in objidlbase.h unknwn.h dwrite.h dwrite_3.h; do
+            test -s "include/$header" || { echo "Missing generated Wine header: $header"; exit 1; }
+          done
           cd ../..
 
       - name: Build Unix Libraries (if build scripts present)
