@@ -53,6 +53,17 @@ if "VirtualQuery" in ac:
     with open(arm64_cpp, "w", encoding="utf-8") as f:
         f.write(ac)
 
+print("Patching Apple allocator fallback...")
+allocator_cpp = "FEX/FEXCore/Source/Utils/AllocatorHooks.cpp"
+with open(allocator_cpp, "r", encoding="utf-8", errors="ignore") as f:
+    allocator_source = f.read()
+old_guard = "size_t malloc_usable_size(void* ptr) {\n  IOS_RPM_GUARD();\n#ifdef __APPLE__"
+new_guard = "size_t malloc_usable_size(void* ptr) {\n#ifdef __APPLE__"
+if old_guard in allocator_source:
+    allocator_source = allocator_source.replace(old_guard, new_guard)
+    with open(allocator_cpp, "w", encoding="utf-8") as f:
+        f.write(allocator_source)
+
 print("Patching wine/configure...")
 if os.path.exists("wine/configure"):
     with open("wine/configure", "r", encoding="utf-8", errors="ignore") as f:
