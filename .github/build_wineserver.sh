@@ -102,6 +102,15 @@ else
     echo "FAILED"; cat "$OBJ_DIR/err-kill.txt"; exit 1
 fi
 
+if [ ! -f "$OBJ_DIR/libwineserver.a" ]; then
+    echo "=== Building complete base libwineserver.a from Wine server sources ==="
+    for s in "$WINE_SRC"/server/*.c; do
+        b=$(basename "$s" .c)
+        compile_one "$s" "$b" || true
+    done
+    ar rcs "$OBJ_DIR/libwineserver.a" "$OBJ_DIR"/*.o
+fi
+
 case "${1:-all}" in
     all)
         echo "=== Building all patched wineserver files ==="
@@ -157,15 +166,6 @@ REPLACEMENTS=(
     "object.o:object.o"
     "async.o:async.o"
 )
-
-if [ ! -f "$OBJ_DIR/libwineserver.a" ]; then
-    echo "=== Building complete base libwineserver.a from Wine server sources ==="
-    for s in "$WINE_SRC"/server/*.c; do
-        b=$(basename "$s" .c)
-        compile_one "$s" "$b" || true
-    done
-    ar rcs "$OBJ_DIR/libwineserver.a" "$OBJ_DIR"/*.o
-fi
 
 for entry in "${REPLACEMENTS[@]}"; do
     new_obj="${entry%%:*}"

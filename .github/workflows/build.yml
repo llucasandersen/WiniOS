@@ -162,6 +162,7 @@ jobs:
 
       - name: Build Madeira 79 Xcode App
         run: |
+          cat .github/terminfo_ios.c >> app/Madeira/wine_stubs.c
           xcodebuild -project app/Madeira.xcodeproj \
             -scheme Madeira \
             -configuration Release \
