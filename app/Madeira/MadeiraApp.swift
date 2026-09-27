@@ -48,7 +48,11 @@ struct MadeiraApp: App {
             // already has an existing Wine C: drive.
             if let steamArchive = Bundle.main.path(forResource: "steam-preload", ofType: "tar.gz") {
                 let marker = documents.appendingPathComponent("wine/.steam-preload-complete")
-                if !fm.fileExists(atPath: marker.path) {
+                let existingSteam = prefix + "/drive_c/Program Files (x86)/Steam/steam.exe"
+                let alternateSteam = prefix + "/drive_c/Program Files/Steam/steam.exe"
+                if !fm.fileExists(atPath: marker.path) &&
+                   !fm.fileExists(atPath: existingSteam) &&
+                   !fm.fileExists(atPath: alternateSteam) {
                     let installed = steamArchive.withCString { archive in
                         prefix.withCString { destination in
                             madeira_extract_prefix_tgz(archive, destination) == 0

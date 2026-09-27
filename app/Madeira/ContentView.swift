@@ -2241,10 +2241,8 @@ struct ContentView: View {
                 // wrong conclusion I wrote into the source. A run without the pool can
                 // only manufacture misleading secondary crashes, so refuse to start one.
                 logStore.log("JIT pool allocation FAILED — not starting Wine.", level: .error)
-                logStore.log("  All placements landed in the forbidden guest 64G window.", level: .info)
-                logStore.log("  Force-quit and relaunch: placement is chosen by the kernel", level: .info)
-                logStore.log("  and depends on current memory layout, so a fresh process", level: .info)
-                logStore.log("  usually lands somewhere valid.", level: .info)
+                logStore.log("  Check the earlier RX allocation, vm_remap, and protection messages", level: .info)
+                logStore.log("  for the failure reason. Force-quit before retrying JIT setup.", level: .info)
                 logStore.uiPaused = false
                 return
             }
