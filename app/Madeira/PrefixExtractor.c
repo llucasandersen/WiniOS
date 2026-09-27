@@ -58,10 +58,15 @@ int madeira_extract_prefix_tgz(const char *tgz_path, const char *dest_dir) {
     int files = 0, dirs = 0;
     char deferred_stamp[64];
     int deferred_stamp_size = -1;
+    int saw_end = 0;
 
     for (;;) {
         int n = gzread(gz, header, BLOCK);
-        if (n == 0) break;
+        if (n == 0) {
+            fprintf(stderr, "[prefix-extract] archive ended without tar trailer\n");
+            gzclose(gz);
+            return -1;
+        }
         if (n != BLOCK) {
             fprintf(stderr, "[prefix-extract] short header read: %d\n", n);
             gzclose(gz);
@@ -70,12 +75,33 @@ int madeira_extract_prefix_tgz(const char *tgz_path, const char *dest_dir) {
         // End-of-archive: two zero blocks. Bail on any all-zero block.
         int all_zero = 1;
         for (int i = 0; i < BLOCK; i++) if (header[i]) { all_zero = 0; break; }
-        if (all_zero) break;
+        if (all_zero) { saw_end = 1; break; }
 
-        char name[101] = {0};
-        memcpy(name, header, 100);
+        char shortname[101] = {0};
+        char tarprefix[156] = {0};
+        char name[260] = {0};
+        memcpy(shortname, header, 100);
+        memcpy(tarprefix, header + 345, 155);
+        int path_len = *tarprefix
+            ? snprintf(name, sizeof(name), "%s/%s", tarprefix, shortname)
+            : snprintf(name, sizeof(name), "%s", shortname);
+        if (path_len < 0 || path_len >= (int)sizeof(name)) {
+            fprintf(stderr, "[prefix-extract] tar path too long\n");
+            gzclose(gz);
+            return -1;
+        }
         int size = parse_octal(header + 124, 12);
         char type = header[156];
+
+        if (type == '0' || type == 0 || type == '5') {
+            if ((strcmp(name, "prefix") != 0 && strncmp(name, "prefix/", 7) != 0) ||
+                strstr(name, "/../") || strstr(name, "/./") ||
+                (strlen(name) >= 3 && strcmp(name + strlen(name) - 3, "/..") == 0)) {
+                fprintf(stderr, "[prefix-extract] unsafe tar path: %s\n", name);
+                gzclose(gz);
+                return -1;
+            }
+        }
 
         // The template carries this marker near the start of the archive.
         // Write it only after every file has been extracted, so an interrupted
@@ -181,7 +207,7 @@ int madeira_extract_prefix_tgz(const char *tgz_path, const char *dest_dir) {
         }
     }
 
-    if (deferred_stamp_size >= 0) {
+    if (saw_end && deferred_stamp_size >= 0) {
         char stamp_path[1200];
         snprintf(stamp_path, sizeof(stamp_path), "%s/.update-timestamp", dest_dir);
         int fd = open(stamp_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);

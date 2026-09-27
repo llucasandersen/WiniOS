@@ -43,6 +43,9 @@ jobs:
             test -d "FEX/External/$dep" || { echo "Missing FEX dependency: $dep"; exit 1; }
           done
 
+      - name: Test Wine prefix extraction
+        run: python3 tools/test_prefix_extractor.py
+
       - name: Build FEXCore for iOS
         run: |
           python3 .github/patch_fex.py
