@@ -155,7 +155,17 @@ echo ""
 echo "Results: $SUCCEEDED succeeded, $FAILED failed"
 if [ -n "$FAILED_FILES" ]; then
     echo "Failed:$FAILED_FILES"
+    for failed_name in $FAILED_FILES; do
+        echo "=== $failed_name compiler errors ==="
+        cat "$OBJ_DIR/$failed_name.err"
+    done
+    exit 1
 fi
+
+echo "=== Building shared iOS synchronization ==="
+xcrun -sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=17.0 \
+    -O2 -fPIC -I"$REPO_ROOT/build/madsync" \
+    -c "$REPO_ROOT/build/madsync/madsync.c" -o "$OBJ_DIR/madsync.o"
 
 echo ""
 echo "=== Building libntdll_unix.a ==="
