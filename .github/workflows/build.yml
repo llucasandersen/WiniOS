@@ -1,0 +1,217 @@
+name: Build Madeira upstream IPA
+
+on:
+  push:
+    branches: [ "madeira-upstream-ipa" ]
+  pull_request:
+    branches: [ "madeira-upstream-ipa" ]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Select Xcode 16
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer || \
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Install Build Tools
+        run: |
+          brew install ninja cmake llvm@15 bison flex
+          echo "/opt/homebrew/opt/llvm@15/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/bison/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/flex/bin" >> $GITHUB_PATH
+          python3 -m pip install --break-system-packages packaging || pip3 install packaging || true
+
+      - name: Verify upstream dependency pins
+        run: |
+          echo "Madeira source: $(git rev-parse HEAD)"
+          git submodule status --recursive
+          test -s FEX/CMakeLists.txt
+          test -s wine/configure
+          for dep in fmt xxhash range-v3 unordered_dense vixl rpmalloc; do
+            test -d "FEX/External/$dep" || { echo "Missing FEX dependency: $dep"; exit 1; }
+          done
+
+      - name: Build FEXCore for iOS
+        run: |
+          python3 .github/patch_fex.py
+          mkdir -p FEX/build-ios
+          cd FEX/build-ios
+          cmake -GNinja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_SYSTEM_PROCESSOR=arm64 \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DTUNE_CPU=none \
+            -DTUNE_ARCH=generic \
+            -DBUILD_TESTING=OFF \
+            -DENABLE_LTO=OFF \
+            -DENABLE_ASSERTIONS=OFF \
+            ..
+          ninja -j$(sysctl -n hw.ncpu) FEXCore FEXCore_Base JemallocLibs fmt cephes_128bit xxhash softfloat_3e
+          ls -lh FEXCore/Source/lib*.a
+          cd ../..
+
+      - name: Fetch and Prepare VC++ Runtime
+        run: |
+          mkdir -p app/Madeira/x86_64-vcruntime
+          curl -L -s -o /tmp/vc_redist.x64.exe https://aka.ms/vs/17/release/vc_redist.x64.exe || true
+          brew install sevenzip || true
+          7zz x /tmp/vc_redist.x64.exe -o/tmp/vcredist || true
+          find /tmp/vcredist -name "*.cab" -exec 7zz x {} -oapp/Madeira/x86_64-vcruntime/ \; || true
+          touch app/Madeira/x86_64-vcruntime/.keep
+
+      - name: Setup GnuTLS and FreeType Headers
+        run: |
+          brew install gnutls freetype
+          mkdir -p toolchains/gnutls-ios/include toolchains/gnutls-ios/lib
+          cp -R /opt/homebrew/opt/gnutls/include/* toolchains/gnutls-ios/include/ 2>/dev/null || true
+          cp app/Madeira/libgnutls.a toolchains/gnutls-ios/lib/ 2>/dev/null || true
+          git clone --depth 1 --branch VER-2-13-3 https://github.com/freetype/freetype.git research/freetype || true
+          bash build/freetype-ios/build.sh || true
+
+      - name: Configure Wine for macOS/iOS headers
+        run: |
+          export PATH="/opt/homebrew/opt/bison/bin:/opt/homebrew/opt/flex/bin:/opt/homebrew/opt/llvm@15/bin:$PATH"
+          chmod +x wine/configure || true
+          mkdir -p wine/build-macos
+          cd wine/build-macos
+          ../configure --enable-win64 --without-x --without-freetype || true
+          # Ensure config.h exists even if configure exited early
+          mkdir -p include
+          if [ ! -f "include/config.h" ]; then
+            echo "Generating fallback config.h from config.h.in..."
+            cp ../include/config.h.in include/config.h || touch include/config.h
+          fi
+          ls -lh include/config.h || true
+          cp include/config.h ../../build/wineserver/config.h || true
+          cp include/config.h ../../build/ntdll-unix/config.h || true
+          cp include/config.h ../../build/win32u-unix/config.h || true
+          for idl in ../include/*.idl; do
+            header="include/$(basename "$idl" .idl).h"
+            make -s "$header" 2>/dev/null || true
+          done
+          for header in objidlbase.h unknwn.h dwrite.h dwrite_3.h; do
+            test -s "include/$header" || { echo "Missing generated Wine header: $header"; exit 1; }
+          done
+          cd ../..
+
+      - name: Build Unix Libraries (if build scripts present)
+        run: |
+          chmod -R +x build/ || true
+          mkdir -p app/Madeira
+          if [ -f "app/libdxmt_unix.a" ]; then
+            echo "Combining libdxmt_unix.a with LLVM 15 static libs..."
+            LLVM15_DIR=$(brew --prefix llvm@15)
+            LLVM_LIBS=$(find "$LLVM15_DIR/lib" -name "libLLVM*.a" 2>/dev/null | tr '\n' ' ')
+            if [ -n "$LLVM_LIBS" ]; then
+              xcrun -sdk iphoneos libtool -static -o app/Madeira/libdxmt_combined.a app/libdxmt_unix.a $LLVM_LIBS 2>/dev/null || cp app/libdxmt_unix.a app/Madeira/libdxmt_combined.a
+            else
+              cp app/libdxmt_unix.a app/Madeira/libdxmt_combined.a
+            fi
+          fi
+          # Run individual component builds if their base libs need assembly
+          if [ -f "build/wineserver/build.sh" ]; then
+            cp .github/build_wineserver.sh build/wineserver/build.sh
+            bash build/wineserver/build.sh all
+          fi
+          if [ -f "build/ntdll-unix/build.sh" ]; then
+            cp .github/build_ntdll-unix.sh build/ntdll-unix/build.sh
+            bash build/ntdll-unix/build.sh
+          fi
+          if [ -f "build/win32u-unix/build.sh" ]; then
+            cp .github/build_win32u-unix.sh build/win32u-unix/build.sh
+            bash build/win32u-unix/build.sh
+          fi
+          ls -lh app/Madeira/lib*.a || true
+          python3 .github/patch_macho.py app/Madeira/lib*.a || true
+
+      - name: Print native build diagnostics
+        run: |
+          for file in build/ntdll-unix/obj/dwrite_unixlib.err \
+                      build/win32u-unix/obj/class.err \
+                      build/win32u-unix/obj/message.err \
+                      build/win32u-unix/obj/syscall.err \
+                      build/win32u-unix/obj/window.err; do
+            if [ -f "$file" ]; then
+              echo "=== $file ==="
+              sed -n '1,70p' "$file"
+            fi
+          done
+
+      - name: Select Xcode 26 for app build
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Build Madeira upstream Xcode App
+        run: |
+          cat .github/terminfo_ios.c >> app/Madeira/wine_stubs.c
+          xcodebuild -project app/Madeira.xcodeproj \
+            -scheme Madeira \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CLANG_CXX_LANGUAGE_STANDARD="c++20" \
+            ONLY_ACTIVE_ARCH=NO
+
+      - name: Package and Sanitize IPA
+        run: |
+          mkdir -p build/Payload
+          APP_PATH=$(find build/DerivedData -name "Madeira.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: Madeira.app not found!"
+            exit 1
+          fi
+          cp -R "$APP_PATH" build/Payload/
+          
+          EXE="build/Payload/Madeira.app/Madeira"
+          echo "=== Inspecting initial dylib dependencies of $EXE ==="
+          otool -L "$EXE" || true
+          
+          # Sanitize host /opt/homebrew dylib references
+          mkdir -p "build/Payload/Madeira.app/Frameworks"
+          for dylib in $(otool -L "$EXE" | grep "/opt/homebrew" | awk '{print $1}'); do
+            echo "Found host dylib reference: $dylib"
+            if [[ "$dylib" == *"libunwind"* ]]; then
+              echo "Re-pointing libunwind to iOS system dynamic linker..."
+              install_name_tool -change "$dylib" "/usr/lib/system/libunwind.dylib" "$EXE" || true
+            else
+              BASENAME=$(basename "$dylib")
+              echo "Bundling $BASENAME into Frameworks..."
+              cp -f "$dylib" "build/Payload/Madeira.app/Frameworks/$BASENAME" || true
+              install_name_tool -change "$dylib" "@rpath/$BASENAME" "$EXE" || true
+            fi
+          done
+          install_name_tool -add_rpath "@executable_path/Frameworks" "$EXE" 2>/dev/null || true
+          
+          echo "=== Applying entitlements to Madeira.app ==="
+          codesign -s - --entitlements app/Madeira/Madeira.entitlements -f build/Payload/Madeira.app || true
+          codesign -d --entitlements :- build/Payload/Madeira.app || true
+          
+          cd build
+          zip -r -9 Madeira-Upstream-8c050d0.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Madeira-Upstream-8c050d0-IPA
+          path: build/Madeira-Upstream-8c050d0.ipa
+          retention-days: 14
+# Source base: willfaust/Madeira 8c050d03f4d89096e1e2e2c8bb44479fffd86619.
