@@ -161,6 +161,18 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
 
+      - name: Refresh pinned DXMT runtime controls
+        run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          DXMT=research/dxmt
+          xcrun -sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
+            -miphoneos-version-min=18.0 -fblocks -O2 -x objective-c \
+            -I"$DXMT/include" -I"$DXMT/libs" -I"$DXMT/src/winemetal" -I"$DXMT/src/airconv" \
+            -c "$DXMT/src/winemetal/unix/winemetal_unix.c" \
+            -o "$RUNNER_TEMP/winemetal_unix.o"
+          xcrun -sdk iphoneos ar r app/Madeira/libdxmt_combined.a "$RUNNER_TEMP/winemetal_unix.o"
+          xcrun -sdk iphoneos ranlib app/Madeira/libdxmt_combined.a
+
       - name: Build Madeira upstream Xcode App
         run: |
           cat .github/terminfo_ios.c >> app/Madeira/wine_stubs.c
