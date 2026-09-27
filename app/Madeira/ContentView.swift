@@ -2411,10 +2411,10 @@ struct ContentView: View {
         }) else {
             logStore.log("Steam is not installed in this prefix.", level: .error)
             logStore.log("  Searched: Program Files (x86)\\Steam and Program Files\\Steam", level: .info)
-            logStore.log("  Valve's SteamSetup.exe cannot be used to install it here: the", level: .info)
-            logStore.log("  installer AND the Steam.exe it lays down are 32-bit x86, and this", level: .info)
-            logStore.log("  build runs x86-64 only (ARM64EC + FEX, no 32-bit emulator).", level: .info)
-            logStore.log("  Copy an existing 64-bit Steam folder into the prefix instead.", level: .info)
+            logStore.log("  This build runs x86-64 Windows apps only (ARM64EC + FEX).", level: .info)
+            logStore.log("  SteamSetup.exe may use 32-bit components, so direct installation", level: .info)
+            logStore.log("  is not supported here. Copy a 64-bit Steam client folder", level: .info)
+            logStore.log("  into the prefix; some Steam components may still be incompatible.", level: .info)
             return false
         }
 

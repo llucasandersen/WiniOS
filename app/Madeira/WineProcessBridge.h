@@ -4,6 +4,10 @@
 extern "C" {
 #endif
 
+// Create the bundled Wine C: drive in Documents/wine on first app launch.
+// Safe to call again for an existing prefix.
+void madeira_seed_prefix_if_needed(const char *prefix_path);
+
 // Start Wine process initialization on a background thread.
 // Must be called AFTER wineserver is running.
 // prefix_path: path to the Wine prefix directory

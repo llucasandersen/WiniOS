@@ -6,7 +6,13 @@ struct MadeiraApp: App {
         WindowGroup {
             ContentView()
                 .modifier(ClaimGamepadEvents())
-                .onAppear { GamepadInput.shared.start() }
+                .onAppear {
+                    let documents = FileManager.default.urls(for: .documentDirectory,
+                                                              in: .userDomainMask)[0]
+                    let prefix = documents.appendingPathComponent("wine").path
+                    prefix.withCString { madeira_seed_prefix_if_needed($0) }
+                    GamepadInput.shared.start()
+                }
         }
     }
 }

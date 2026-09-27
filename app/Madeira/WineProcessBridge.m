@@ -837,9 +837,19 @@ static void *wine_process_thread(void *arg) {
             // <filesystem>, etc.) don't trip __wine_unimplemented stubs.
             if (use_arm64ec) {
                 NSString *vcrtSource = [bundlePath stringByAppendingPathComponent:@"x86_64-vcruntime"];
+                // Local builds can keep Microsoft DLLs in the app bundle. For
+                // externally signed builds, accept user-supplied DLLs in the
+                // app's Documents directory without changing the IPA signature.
+                NSString *documentsVcrt = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/x86_64-vcruntime"];
+                NSArray *localDlls = [fm contentsOfDirectoryAtPath:documentsVcrt error:nil];
+                if ([localDlls containsObject:@"concrt140.dll"] ||
+                    [localDlls containsObject:@"vcruntime140_1.dll"]) {
+                    vcrtSource = documentsVcrt;
+                }
                 NSArray *vcrtDlls = [fm contentsOfDirectoryAtPath:vcrtSource error:nil];
                 int vcrtLinked = 0, vcrtSkipped = 0;
                 for (NSString *dll in vcrtDlls) {
+                    if (![dll.lowercaseString hasSuffix:@".dll"]) continue;
                     /* NOTE 2026-07-03 (late): retried lifting BOTH exemptions
                      * below after the fast-write bisect, hoping trap-mode had
                      * fixed the corruption class (and to keep hot CRT calls
