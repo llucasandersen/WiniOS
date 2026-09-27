@@ -3,3 +3,6 @@ int setupterm(char *term, int fildes, int *errret) { (void)term; (void)fildes; i
 void *set_curterm(void *nterm) { (void)nterm; return 0; }
 int del_curterm(void *oterm) { (void)oterm; return 0; }
 int tigetnum(char *capname) { (void)capname; return -1; }
+
+// FEX disables rpmalloc on Apple; its diagnostic snapshot has no producer.
+int rpm_cas_snapshot_take(void *out) { (void)out; return 0; }

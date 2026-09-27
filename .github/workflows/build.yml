@@ -173,6 +173,21 @@ jobs:
           xcrun -sdk iphoneos ar r app/Madeira/libdxmt_combined.a "$RUNNER_TEMP/winemetal_unix.o"
           xcrun -sdk iphoneos ranlib app/Madeira/libdxmt_combined.a
 
+      - name: Build iOS zstd for Debug LLVM link
+        run: |
+          git clone --depth=1 --branch v1.5.7 https://github.com/facebook/zstd.git "$RUNNER_TEMP/zstd"
+          cmake -S "$RUNNER_TEMP/zstd/build/cmake" -B "$RUNNER_TEMP/zstd-ios" -GNinja \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
+            -DCMAKE_BUILD_TYPE=Release -DZSTD_BUILD_STATIC=ON \
+            -DZSTD_BUILD_SHARED=OFF -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/zstd-ios" --target libzstd_static -j 4
+          ZSTD_LIB=$(find "$RUNNER_TEMP/zstd-ios" -name libzstd.a -type f | head -n 1)
+          test -n "$ZSTD_LIB"
+          xcrun -sdk iphoneos libtool -static -o "$RUNNER_TEMP/libdxmt_debug.a" \
+            app/Madeira/libdxmt_combined.a "$ZSTD_LIB"
+          cp "$RUNNER_TEMP/libdxmt_debug.a" app/Madeira/libdxmt_combined.a
+
       - name: Build Madeira upstream Xcode App
         run: |
           bash build/stage-licenses.sh
