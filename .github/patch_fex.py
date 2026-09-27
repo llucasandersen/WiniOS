@@ -73,6 +73,17 @@ if os.path.exists("wine/configure"):
         wc = wc.replace(old_pe_check, '# bypassed PE check: ' + old_pe_check)
         with open("wine/configure", "w", encoding="utf-8") as f:
             f.write(wc)
+print("Patching Wine sync header order...")
+sync_cpp = "wine/dlls/ntdll/unix/sync.c"
+with open(sync_cpp, "r", encoding="utf-8", errors="ignore") as f:
+    sync_source = f.read()
+old_headers = '#include "../../../../build/madeira_cfg.h"   /* ml1122: before the Wine headers, which ban strncpy by macro */\n#include "config.h"'
+new_headers = '#include "config.h"\n#include "../../../../build/madeira_cfg.h"   /* ml1122: before Wine public headers */'
+if old_headers in sync_source:
+    sync_source = sync_source.replace(old_headers, new_headers)
+    with open(sync_cpp, "w", encoding="utf-8") as f:
+        f.write(sync_source)
+
 print("Patching rpmalloc.c for 454GB regime...")
 rpmalloc_c = "FEX/External/rpmalloc/rpmalloc/rpmalloc.c"
 if os.path.exists(rpmalloc_c):
