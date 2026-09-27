@@ -103,7 +103,7 @@ jobs:
           cp include/config.h ../../build/wineserver/config.h || true
           cp include/config.h ../../build/ntdll-unix/config.h || true
           cp include/config.h ../../build/win32u-unix/config.h || true
-          make -j"$(sysctl -n hw.ncpu)" include/objidlbase.h include/dwrite.h include/dwrite_3.h
+          make -j4 include
           cd ../..
 
       - name: Build Unix Libraries (if build scripts present)
