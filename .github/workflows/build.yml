@@ -121,7 +121,8 @@ jobs:
           fi
           # Run individual component builds if their base libs need assembly
           if [ -f "build/wineserver/build.sh" ]; then
-            bash build/wineserver/build.sh all || true
+            cp .github/build_wineserver.sh build/wineserver/build.sh
+            bash build/wineserver/build.sh all
           fi
           if [ -f "build/ntdll-unix/build.sh" ]; then
             bash build/ntdll-unix/build.sh || true
