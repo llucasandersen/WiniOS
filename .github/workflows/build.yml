@@ -125,10 +125,12 @@ jobs:
             bash build/wineserver/build.sh all
           fi
           if [ -f "build/ntdll-unix/build.sh" ]; then
-            bash build/ntdll-unix/build.sh || true
+            cp .github/build_ntdll-unix.sh build/ntdll-unix/build.sh
+            bash build/ntdll-unix/build.sh
           fi
           if [ -f "build/win32u-unix/build.sh" ]; then
-            bash build/win32u-unix/build.sh || true
+            cp .github/build_win32u-unix.sh build/win32u-unix/build.sh
+            bash build/win32u-unix/build.sh
           fi
           ls -lh app/Madeira/lib*.a || true
           python3 .github/patch_macho.py app/Madeira/lib*.a || true
