@@ -43,6 +43,11 @@ jobs:
             test -d "FEX/External/$dep" || { echo "Missing FEX dependency: $dep"; exit 1; }
           done
 
+      - name: Test TEB thread-local retargeting
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tools/test_teb_tsd_patch.c -o /tmp/test_teb_tsd_patch
+          /tmp/test_teb_tsd_patch
+
       - name: Test JIT runtime readiness
         run: python3 tools/test_jit_readiness.py
 

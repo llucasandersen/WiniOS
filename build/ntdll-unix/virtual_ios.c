@@ -23,6 +23,7 @@
 #endif
 
 #include "config.h"
+#include "teb_tsd_patch.h"
 #include "../madeira_cfg.h"   /* ml1095: one config file */
 #include <malloc/malloc.h>
 
@@ -4506,7 +4507,6 @@ int ios_jit_patch_x18(char *text_rw, char *text_rx, size_t text_size,
      * words are excluded via data_map for the same reason as the x18 pass. */
     if (ios_teb_tls_slot_offset && text_size >= 12)
     {
-        const uint32_t want_imm = (uint32_t)(ios_teb_tls_slot_offset / 8) << 10;
         static int announced;
         int found = 0, retargeted = 0;
 
@@ -4517,35 +4517,11 @@ int ios_jit_patch_x18(char *text_rw, char *text_rx, size_t text_size,
         if (!announced)
         {
             announced = 1;
-            dprintf(2, "[teb-tsd] retarget pass armed, offset=0x%x\n", ios_teb_tls_slot_offset);
+            dprintf(2, "[teb-tsd] packed literal bitmap retarget armed, offset=0x%x\n", ios_teb_tls_slot_offset);
         }
 
-        for (size_t i = 0; i + 12 <= text_size; i += 4)
-        {
-            uint32_t i0, i1, i2;
-            unsigned reg;
-
-            if (data_map && (data_map[i / 4] || data_map[(i + 4) / 4] || data_map[(i + 8) / 4]))
-                continue;
-
-            i0 = *(uint32_t *)(text_rw + i);
-            if ((i0 & 0xffffffe0) != 0xd53bd060) continue;      /* mrs xN, TPIDRRO_EL0 */
-            reg = i0 & 0x1f;
-
-            i1 = *(uint32_t *)(text_rw + i + 4);
-            /* and xN, xN, #0xfffffffffffffff8 */
-            if (i1 != (0x927df000u | (reg << 5) | reg)) continue;
-
-            i2 = *(uint32_t *)(text_rw + i + 8);
-            /* ldr xN, [xN, #imm12*8] -- same register throughout */
-            if ((i2 & 0xffc003ff) != (0xf9400000u | (reg << 5) | reg)) continue;
-
-            found++;
-            if ((i2 & 0x003ffc00) == want_imm) continue;        /* already correct */
-
-            *(uint32_t *)(text_rw + i + 8) = (i2 & ~0x003ffc00u) | want_imm;
-            retargeted++;
-        }
+        retargeted = madeira_retarget_teb_tsd(text_rw, text_size, data_map,
+                                              ios_teb_tls_slot_offset, &found);
 
         /* Report whenever the module HAS such reads, so found>0/retargeted==0
          * (already correct) is distinguishable from found==0 (none present). */
