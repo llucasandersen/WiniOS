@@ -2830,9 +2830,8 @@ enum TouchControlsHost {
             w.windowLevel = .normal + 101
             w.backgroundColor = .clear
             w.isHidden = settingsVisible // deliberately never made key
-            let host = UIHostingController(rootView: TouchControlsOverlay())
+            let host = UIHostingController(rootView: TouchControlsOverlay().modifier(ClaimGamepadEvents()))
             host.view.backgroundColor = .clear
-            GamepadEventClaim.install(on: host.view)
             w.rootViewController = host
             window = w
         }
