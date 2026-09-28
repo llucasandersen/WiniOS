@@ -894,7 +894,11 @@ struct ContentView: View {
             .navigationBarHidden(vSizeClass == .compact)
             .sheet(isPresented: $settingsPresented, onDismiss: {
                 MetalHostView.shared.isHidden = false
+                TouchControlsHost.suspendForSettings(false)
             }) { MadeiraSettingsView() }
+            .onChange(of: settingsPresented) { _, visible in
+                TouchControlsHost.suspendForSettings(visible)
+            }
             .onAppear {
                 jit_install_trap_handler()
                 entitlements = EntitlementStatus.check()
@@ -2778,6 +2782,12 @@ final class ControlsWindow: UIWindow {
 
 enum TouchControlsHost {
     private static var window: ControlsWindow?
+    private static var settingsVisible = false
+
+    static func suspendForSettings(_ visible: Bool) {
+        settingsVisible = visible
+        window?.isHidden = visible
+    }
 
     static func attach() {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -2793,7 +2803,7 @@ enum TouchControlsHost {
             // ordering nothing inside the app window can undo.
             w.windowLevel = .normal + 101
             w.backgroundColor = .clear
-            w.isHidden = false        // deliberately never made key
+            w.isHidden = settingsVisible // deliberately never made key
             let host = UIHostingController(rootView: TouchControlsOverlay())
             host.view.backgroundColor = .clear
             w.rootViewController = host
