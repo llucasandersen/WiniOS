@@ -2067,6 +2067,8 @@ struct client_surface *nulldrv_client_surface_create( HWND hwnd )
 
 /* ml1920: same-task controller snapshots supplied by the app. */
 #include "../../app/Madeira/Winios/WiniosGamepad.h"
+#include <stdatomic.h>
+#include <stdio.h>
 
 /* Byte-for-byte XINPUT_STATE (a DWORD packet number followed by
  * XINPUT_GAMEPAD). Not #included from xinput.h: that is a PE-side SDK header
@@ -2112,9 +2114,18 @@ C_ASSERT( sizeof(struct winios_gamepad) == 20 );
 ULONG_PTR ios_gamepad_query( UINT index, UINT op, void *buffer )
 {
     struct winios_gamepad pad;
+    static atomic_uint queries[WINIOS_GAMEPAD_MAX];
+    unsigned int query;
 
     if (!buffer || index >= 4) return 0;
-    if (!winios_gamepad_get_state( index, &pad )) return 0;
+    if (op > 1) return 0;
+    query = atomic_fetch_add_explicit( &queries[index], 1, memory_order_relaxed );
+    if (!winios_gamepad_get_state( index, &pad )) {
+        if (query < 2) fprintf( stderr, "[xinput-bridge] query slot=%u op=%u disconnected\n", index, op );
+        return 0;
+    }
+    if (query < 8) fprintf( stderr, "[xinput-bridge] query slot=%u op=%u packet=%u buttons=%04x LS=%d,%d RS=%d,%d\n",
+                          index, op, pad.packet, pad.buttons, pad.lx, pad.ly, pad.rx, pad.ry );
 
     switch (op)
     {

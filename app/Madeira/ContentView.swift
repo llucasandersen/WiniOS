@@ -2734,6 +2734,28 @@ final class TouchControlsModel: ObservableObject {
         return controls.firstIndex { $0.id == id }
     }
 
+    /// Add a complete controller layout without deleting custom keyboard controls.
+    func addGamepadLayout() {
+        let layout: [(String, Double, Double)] = [
+            ("LS", 0.16, 0.72), ("RS", 0.72, 0.72),
+            ("A", 0.88, 0.78), ("B", 0.94, 0.64),
+            ("X", 0.82, 0.64), ("Y", 0.88, 0.50),
+            ("LB", 0.12, 0.22), ("LT", 0.25, 0.22),
+            ("RB", 0.76, 0.22), ("RT", 0.89, 0.22),
+            ("D↑", 0.35, 0.57), ("D↓", 0.35, 0.83),
+            ("D←", 0.29, 0.70), ("D→", 0.41, 0.70),
+            ("Menu", 0.55, 0.26), ("View", 0.43, 0.26),
+            ("L3", 0.16, 0.46), ("R3", 0.70, 0.46)
+        ]
+        var next = controls
+        for (name, x, y) in layout where !next.contains(where: { $0.action.padName == name }) {
+            next.append(TouchControl(nx: x, ny: y, scale: 1, action: .pad(name)))
+        }
+        controls = next
+        editing = false
+        visible = true
+    }
+
     /// ml644: does this WINDOW point land on something interactive?
     ///
     /// Hit-test geometrically, never by walking the UIView hierarchy. SwiftUI
@@ -2806,6 +2828,7 @@ enum TouchControlsHost {
             w.isHidden = settingsVisible // deliberately never made key
             let host = UIHostingController(rootView: TouchControlsOverlay())
             host.view.backgroundColor = .clear
+            GamepadEventClaim.install(on: host.view)
             w.rootViewController = host
             window = w
         }
@@ -2844,14 +2867,15 @@ struct TouchControlsOverlay: View {
             .onChange(of: m.controls) { _, _ in configureGamepad(landscape: landscape) }
             .onChange(of: m.visible) { _, _ in configureGamepad(landscape: landscape) }
             .onChange(of: m.editing) { _, _ in configureGamepad(landscape: landscape) }
-            .onDisappear { GamepadInput.shared.configureTouch(controls: []) }
+            .onDisappear { configureGamepad(landscape: false) }
         }
         .ignoresSafeArea()
     }
 
     private func configureGamepad(landscape: Bool) {
-        let ids = landscape && m.visible && !m.editing
-            ? m.controls.filter { $0.action.padName.map(TouchPadAction.supported) ?? false }.map(\.id) : []
+        // Keep the identity connected across portrait/visibility changes.
+        // configureTouch clears every hold, so hidden controls remain neutral.
+        let ids = m.controls.filter { $0.action.padName.map(TouchPadAction.supported) ?? false }.map(\.id)
         GamepadInput.shared.configureTouch(controls: Set(ids))
     }
 
@@ -3322,6 +3346,8 @@ struct MadeiraSettingsView: View {
                     Toggle("Touch gamepad input", isOn: $touchGamepadEnabled)
                         .disabled(!gamepadsEnabled)
                     Toggle("Show touch controls", isOn: $touchControls.visible)
+                    Button("Add full touch gamepad layout") { touchControls.addGamepadLayout() }
+                    ControllerInputMonitor()
                     Text("Controller support changes apply after restarting Madeira. Touch control visibility changes immediately.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }

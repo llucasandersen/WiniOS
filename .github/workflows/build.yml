@@ -64,6 +64,12 @@ jobs:
       - name: Test Wine prefix extraction
         run: python3 tools/test_prefix_extractor.py
 
+      - name: Test controller snapshots and touch state
+        run: |
+          python3 build/host-tests/check-gamepad.py
+          python3 build/host-tests/check-touch-gamepad.py
+          python3 tools/test_controller_layout.py
+
       - name: Build FEXCore for iOS
         run: |
           python3 .github/patch_fex.py
