@@ -24,6 +24,7 @@
 
 #include "config.h"
 #include "teb_tsd_patch.h"
+#include "jumbo_alignment.h"
 #include "../madeira_cfg.h"   /* ml1095: one config file */
 #include <malloc/malloc.h>
 
@@ -17408,6 +17409,31 @@ NTSTATUS WINAPI NtAllocateVirtualMemory( HANDLE process, PVOID *ret, ULONG_PTR z
                     dprintf(2, "[jumbo] cand plain slot=0x%llx size=0x%lx st=0x%x\n",
                             (unsigned long long)slot, (unsigned long)csz, (unsigned)st2);
                     if (!st2) sz = csz;
+                }
+                /* On a constrained task the historical 416-496GB candidates
+                 * cannot map. Try real offset-preserving slots within the host
+                 * ceiling before an unaligned kernel pick. Chromium frees an
+                 * unaligned 16GB grant and retries with an impossible 32GB ask.
+                 * The normal allocator checks both Wine views and kernel maps;
+                 * these fixed requests never overwrite an existing mapping. */
+                if (st2 && !(type & MEM_COMMIT))
+                {
+                    uint64_t ceiling = (uint64_t)(uintptr_t)host_addr_space_limit;
+                    if (limit && (uint64_t)limit < ceiling) ceiling = limit;
+                    for (uint64_t low_slot = align_unit; low_slot < ceiling && st2;
+                         low_slot += align_unit)
+                    {
+                        uint64_t base;
+                        if (!madeira_jumbo_candidate(low_slot, off, align_unit,
+                                                      *size_ptr, ceiling, &base)) continue;
+                        SIZE_T csz = *size_ptr;
+                        pick = (void *)(uintptr_t)base;
+                        st2 = allocate_virtual_memory(&pick, &csz, type, protect, 0, limit, 0, 0);
+                        dprintf(2, "[jumbo-aligned] host-bounded candidate=%p size=0x%lx status=0x%x\n",
+                                (void *)(uintptr_t)base, (unsigned long)csz, (unsigned)st2);
+                        if (!st2) sz = csz;
+                        if (low_slot > UINT64_MAX - align_unit) break;
+                    }
                 }
                 /* ml996: the boot holdback, if this request fits it. */
                 if (st2)

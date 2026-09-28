@@ -43,6 +43,11 @@ jobs:
             test -d "FEX/External/$dep" || { echo "Missing FEX dependency: $dep"; exit 1; }
           done
 
+      - name: Test constrained jumbo alignment
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tools/test_jumbo_alignment.c -o /tmp/test_jumbo_alignment
+          /tmp/test_jumbo_alignment
+
       - name: Test TEB thread-local retargeting
         run: |
           clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tools/test_teb_tsd_patch.c -o /tmp/test_teb_tsd_patch
