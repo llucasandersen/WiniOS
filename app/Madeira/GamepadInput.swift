@@ -214,7 +214,9 @@ struct ControllerInputMonitor: View {
                 .font(.footnote).foregroundStyle(.secondary)
         }
         .onReceive(tick) { _ in
-            readings = (0..<4).map { i in
+            let detected = GCController.controllers()
+            let devices = detected.map { $0.vendorName ?? "Controller" }.joined(separator: ", ")
+            readings = "iOS controllers: \(detected.count)\(devices.isEmpty ? "" : " — " + devices)\n" + (0..<4).map { i in
                 var pad = winios_gamepad()
                 guard winios_gamepad_get_state(Int32(i), &pad) != 0 else { return "Player \(i + 1): disconnected" }
                 return "Player \(i + 1): buttons \(String(format: "%04X", Int(pad.buttons)))\nLS \(pad.lx),\(pad.ly) RS \(pad.rx),\(pad.ry) LT \(pad.left_trigger) RT \(pad.right_trigger) packet \(pad.packet)"
