@@ -33,6 +33,28 @@ enum MadeiraConfig {
     static var url: URL? { documents?.appendingPathComponent(fileName) }
     static var present: Bool { url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false }
 
+    /// Update only the UI-owned keys; retain unknown switches and comments.
+    static func update(_ values: [String: String]) throws {
+        migrateLegacy(log: { LogStore.shared.log($0) })
+        guard let u = url else { throw CocoaError(.fileNoSuchFile) }
+        let old = (try? String(contentsOf: u, encoding: .utf8)) ?? "# Madeira settings\n"
+        var lines = old.components(separatedBy: .newlines).filter { raw in
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { return true }
+            return values[String(line[..<eq]).trimmingCharacters(in: .whitespaces)] == nil
+        }
+        while lines.last == "" { lines.removeLast() }
+        for key in values.keys.sorted() { lines.append("\(key) = \(values[key]!)") }
+        try (lines.joined(separator: "\n") + "\n").write(to: u, atomically: true, encoding: .utf8)
+    }
+
+    static var desktopSize: (Int, Int) {
+        let parts = (get("desktop-size") ?? "1024x768").lowercased().split(separator: "x")
+        guard parts.count == 2, let w = Int(parts[0]), let h = Int(parts[1]),
+              (640...3840).contains(w), (480...2160).contains(h) else { return (1024, 768) }
+        return (w, h)
+    }
+
     /// All key/value pairs of madeira.cfg (empty when the file is absent).
     static func all() -> [String: String] {
         guard let u = url, let text = try? String(contentsOf: u, encoding: .utf8) else { return [:] }

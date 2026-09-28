@@ -2149,7 +2149,7 @@ NTSTATUS WINAPI NtTerminateProcess( HANDLE handle, LONG exit_code )
                                         if (cb[3] == 0xE8) kind = "CALL";          /* v-5 */
                                         else {
                                             int k;
-                                            for (k = 1; k <= 6; k++) {
+                                            for (k = 2; k <= 6; k++) {
                                                 unsigned char op = cb[8 - k], modrm = cb[8 - k + 1];
                                                 if (op == 0xFF && ((modrm >> 3) & 7) == 2) { kind = "call*"; break; }
                                             }
@@ -2159,20 +2159,13 @@ NTSTATUS WINAPI NtTerminateProcess( HANDLE handle, LONG exit_code )
                                 if (kind[0] == ' ' && hits >= 8) continue;   /* keep the log honest but bounded */
                                 /* name via export directory of the map view */
                                 {
-                                    const unsigned char *mb = (const unsigned char *)(uintptr_t)mbase;
-                                    const char *mname = "?";
-                                    unsigned int e_lf, exp_rva, name_rva;
-                                    if (mb[0] == 'M' && mb[1] == 'Z' &&
-                                        (e_lf = *(const unsigned int *)(mb + 0x3c)) < 0x1000 &&
-                                        (exp_rva = *(const unsigned int *)(mb + e_lf + 0x88)) &&
-                                        exp_rva < msz &&
-                                        (name_rva = *(const unsigned int *)(mb + exp_rva + 0x0c)) &&
-                                        name_rva < msz)
-                                        mname = (const char *)(mb + name_rva);
-                                    else if (mb[0] == 'M' && mb[1] == 'Z')
-                                        mname = "(exe)";
-                                    dprintf(2, "[term-stack] ml660 sp+%03x: %s %llx  %.32s+0x%llx\n",
-                                            wi * 8, kind, (unsigned long long)v, mname,
+                                    /* The module ledger can outlive an unloaded image.
+                                     * Steam's updater exits after unmapping tier0_s64.dll;
+                                     * dereferencing its former PE header here faults inside
+                                     * NtTerminateProcess. Log addresses for offline attribution
+                                     * without reading memory owned by a terminating guest. */
+                                    dprintf(2, "[term-stack] safe-exit sp+%03x: %s %llx module=%llx+0x%llx\n",
+                                            wi * 8, kind, (unsigned long long)v, mbase,
                                             (unsigned long long)(v - mbase));
                                 }
                                 hits++;
