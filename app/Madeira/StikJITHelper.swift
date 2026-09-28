@@ -1,8 +1,5 @@
 import UIKit
 
-/// Helper to enable JIT via StikDebug/StikJIT URL scheme.
-/// Opens StikDebug with an embedded script, polls for CS_DEBUGGED,
-/// then allocates JIT memory and detaches the debugger.
 // BEGIN JIT READINESS STATE
 // Pool mappings live until this process exits; debugger attachment does not.
 final class MadeiraJITReadiness {
@@ -27,6 +24,7 @@ final class MadeiraJITReadiness {
 }
 // END JIT READINESS STATE
 
+/// Prepare JIT through the bundled debugger script and retain runtime readiness.
 enum StikJITHelper {
     static let readiness = MadeiraJITReadiness()
     private static var enableTimer: Timer?
