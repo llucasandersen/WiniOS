@@ -43,6 +43,9 @@ jobs:
             test -d "FEX/External/$dep" || { echo "Missing FEX dependency: $dep"; exit 1; }
           done
 
+      - name: Test JIT runtime readiness
+        run: python3 tools/test_jit_readiness.py
+
       - name: Test Wine prefix extraction
         run: python3 tools/test_prefix_extractor.py
 

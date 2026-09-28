@@ -853,7 +853,7 @@ struct ContentView: View {
     @StateObject private var logStore = LogStore.shared
     @State private var jitStatus: JITStatus = .unknown
     @State private var entitlements: EntitlementStatus?
-    @State private var debuggerAttached = isDebuggerAttached()
+    @State private var runtimeJITReady = StikJITHelper.readiness.isReady(debuggerAttached: isDebuggerAttached())
     @ObservedObject private var input = InputSettings.shared
     @State private var pointerPanel = false
     @State private var settingsPresented = false
@@ -1092,9 +1092,8 @@ struct ContentView: View {
 
     private func entitlementBadges(_ ents: EntitlementStatus) -> some View {
         HStack(spacing: 8) {
-            // Live debugger/JIT state, not the (macOS-only, never granted on
-            // iOS) allow-jit entitlement the old badge checked.
-            entitlementBadge("JIT", granted: debuggerAttached)
+            // Prepared executable memory remains usable after intentional detach.
+            entitlementBadge("JIT", granted: runtimeJITReady)
             entitlementBadge("Memory+", granted: ents.increasedMemory)
             entitlementBadge("64-bit VA", granted: ents.extendedVA)
             Spacer()
@@ -1113,7 +1112,7 @@ struct ContentView: View {
         .padding(.top, 4)
         .padding(.bottom, 8)
         .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
-            debuggerAttached = isDebuggerAttached()
+            runtimeJITReady = StikJITHelper.readiness.isReady(debuggerAttached: isDebuggerAttached())
         }
     }
 
@@ -1826,8 +1825,8 @@ struct ContentView: View {
     /// Debugger stays attached during PE loading so mprotect_exec can use BRK
     /// to prepare code pages. Detach happens after Wine finishes + recovery.
     private func runWineFullSequence() {
-        guard jit_check_debugged() else {
-            logStore.log("JIT not enabled. Press 'Enable JIT' first.", level: .error)
+        guard isDebuggerAttached() else {
+            logStore.log("A new Wine launch needs the debugger to prepare its pool. Press Enable JIT first; an existing prepared pool remains executable after detach.", level: .error)
             return
         }
         /* ml1095: one config file. Written once from any legacy madeira-*.txt. */

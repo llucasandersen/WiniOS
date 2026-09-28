@@ -3,7 +3,34 @@ import UIKit
 /// Helper to enable JIT via StikDebug/StikJIT URL scheme.
 /// Opens StikDebug with an embedded script, polls for CS_DEBUGGED,
 /// then allocates JIT memory and detaches the debugger.
+// BEGIN JIT READINESS STATE
+// Pool mappings live until this process exits; debugger attachment does not.
+final class MadeiraJITReadiness {
+    private let lock = NSLock()
+    private var prepared = false
+
+    func recordPreparedPool() {
+        lock.lock()
+        prepared = true
+        lock.unlock()
+    }
+
+    func hasPreparedPool() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return prepared
+    }
+
+    func isReady(debuggerAttached: Bool) -> Bool {
+        debuggerAttached || hasPreparedPool()
+    }
+}
+// END JIT READINESS STATE
+
 enum StikJITHelper {
+    static let readiness = MadeiraJITReadiness()
+    private static var enableTimer: Timer?
+
 
     /// The JIT script. Edit madeira-jit.js, then run:
     ///   base64 -i app/Madeira/madeira-jit.js | tr -d '\n' | pbcopy
@@ -56,13 +83,24 @@ enum StikJITHelper {
         }
     }
 
-    /// Poll every 0.5s until CS_DEBUGGED is set, then call completion.
+    /// CS_DEBUGGED remains set after detach. Allocation requests need a live
+    /// debugger, so wait for P_TRACED instead of accepting that stale flag.
     private static func pollForJIT(completion: @escaping (Bool) -> Void) {
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
-            if jit_check_debugged() {
+        enableTimer?.invalidate()
+        var ticks = 0
+        enableTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+            ticks += 1
+            if isDebuggerAttached() {
                 timer.invalidate()
-                LogStore.shared.log("JIT enabled! (CS_DEBUGGED set)", level: .success)
+                enableTimer = nil
+                unsetenv("MADEIRA_DETACHED")
+                LogStore.shared.log("JIT debugger attached; ready to prepare the Wine pool.", level: .success)
                 completion(true)
+            } else if ticks >= 240 {
+                timer.invalidate()
+                enableTimer = nil
+                LogStore.shared.log("JIT attachment timed out. Use Enable JIT again with StikDebug.", level: .error)
+                completion(false)
             }
         }
     }
@@ -80,6 +118,10 @@ enum StikJITHelper {
     /// Allocate a JIT memory pool via BRK #0xf00d WITHOUT detaching the debugger.
     /// The debugger stays attached so Wine can use BRK to prepare PE code pages.
     static func allocatePool(poolSize requestedPoolSize: Int = 128 * 1024 * 1024) -> (rx: UnsafeMutableRawPointer, rw: UnsafeMutableRawPointer, size: Int)? {
+        guard isDebuggerAttached() else {
+            LogStore.shared.log("Cannot prepare a new JIT pool without an attached debugger. Use Enable JIT.", level: .error)
+            return nil
+        }
         var poolSize = requestedPoolSize      // ml1036: may shrink to fit, see the hole census below
         LogStore.shared.log("Allocating \(poolSize / 1024 / 1024)MB JIT pool via debugger...")
 
@@ -580,11 +622,16 @@ enum StikJITHelper {
 
         LogStore.shared.log("JIT pool ready (debugger still attached).", level: .success)
 
+        readiness.recordPreparedPool()
         return (rx: rxPtr, rw: rwPtr, size: poolSize)
     }
 
     /// Detach the debugger. Call this after Wine is done loading PE DLLs.
     static func detachDebugger() {
+        guard isDebuggerAttached() else {
+            LogStore.shared.log("Debugger already detached; prepared JIT pool remains available.")
+            return
+        }
         LogStore.shared.log("Detaching debugger...")
         jit26_detach()
         // task #34: signal in-process waiters (share-probe poller). CS_DEBUGGED
