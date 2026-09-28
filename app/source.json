@@ -22,9 +22,6 @@
           },
           {
             "name": "com.apple.developer.kernel.increased-memory-limit"
-          },
-          {
-            "name": "com.apple.developer.kernel.extended-virtual-addressing"
           }
         ]
       }

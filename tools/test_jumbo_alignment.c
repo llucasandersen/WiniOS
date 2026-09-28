@@ -5,6 +5,16 @@ int main(void)
 {
     const uint64_t align = 0x400000000ULL, ceiling = 0xfc0000000ULL;
     uint64_t base = 0;
+    assert(madeira_jumbo_alignment(0x80000000ULL) == 0x80000000ULL);
+    assert(madeira_jumbo_alignment(0x80010000ULL) == 0x80000000ULL);
+    assert(madeira_jumbo_alignment(0x200000000ULL) == 0x200000000ULL);
+    assert(madeira_jumbo_alignment(0x400010000ULL) == align);
+    assert(madeira_jumbo_candidate(0x380000000ULL, 0, 0x80000000ULL,
+                                   0x80000000ULL, ceiling, &base));
+    assert(base == 0x380000000ULL);
+    assert(madeira_jumbo_candidate(0x480000000ULL, 0x7fff0000ULL,
+                                   0x80000000ULL, 0x80010000ULL, ceiling, &base));
+    assert(base == 0x47fff0000ULL);
     /* Build 6 falsely granted these soft ranges on a 63GB task. */
     assert(!madeira_jumbo_range(0x73ffff0000ULL, align + 0x10000, ceiling));
     assert(!madeira_jumbo_range(0x7800000000ULL, align, ceiling));

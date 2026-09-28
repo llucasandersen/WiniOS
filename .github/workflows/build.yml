@@ -48,6 +48,11 @@ jobs:
           clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tools/test_jumbo_alignment.c -o /tmp/test_jumbo_alignment
           /tmp/test_jumbo_alignment
 
+      - name: Test compact Steam allocator patch
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tools/test_cef_compact.c -o /tmp/test_cef_compact
+          /tmp/test_cef_compact
+
       - name: Test TEB thread-local retargeting
         run: |
           clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tools/test_teb_tsd_patch.c -o /tmp/test_teb_tsd_patch
@@ -291,7 +296,7 @@ jobs:
           echo "=== Applying entitlements to Madeira.app ==="
           codesign -s - --entitlements app/Madeira/Madeira.entitlements -f build/Payload/Madeira.app
           codesign -d --entitlements :- build/Payload/Madeira.app > /tmp/madeira-entitlements.plist
-          python3 -c 'import plistlib; e=plistlib.load(open("/tmp/madeira-entitlements.plist", "rb")); assert e.get("com.apple.developer.kernel.extended-virtual-addressing") is True; assert e.get("com.apple.developer.kernel.increased-memory-limit") is True; print("Verified Extended Virtual Addressing and Increased Memory Limit entitlements")'
+          python3 -c 'import plistlib; e=plistlib.load(open("/tmp/madeira-entitlements.plist", "rb")); assert not e.get("com.apple.developer.kernel.extended-virtual-addressing", False); assert e.get("com.apple.developer.kernel.increased-memory-limit") is True; print("Verified no Extended Virtual Addressing request; Increased Memory Limit retained")'
           
           cd build
           zip -r -9 Madeira-Upstream-8c050d0-Debug.ipa Payload

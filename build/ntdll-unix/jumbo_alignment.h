@@ -2,6 +2,13 @@
 #define MADEIRA_JUMBO_ALIGNMENT_H
 #include <stdint.h>
 
+static inline uint64_t madeira_jumbo_alignment(uint64_t size)
+{
+    uint64_t alignment = UINT64_C(0x400000000);
+    while (alignment > UINT64_C(0x40000000) && alignment > size) alignment >>= 1;
+    return alignment;
+}
+
 static inline int madeira_jumbo_range(uint64_t base, uint64_t size, uint64_t ceiling)
 {
     return base && size && base < ceiling && size <= ceiling - base;

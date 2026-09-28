@@ -922,12 +922,6 @@ struct ContentView: View {
             // it, never overlays on it.
             if let ents = entitlements {
                 entitlementBadges(ents)
-                if !ents.extendedVA {
-                    Text("Steam browser needs Extended Virtual Addressing. Enable this capability for the signing App ID and reinstall preserving app data. JIT and Memory+ do not enable it.")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                        .padding(.horizontal)
-                }
             }
             HStack(spacing: 6) {
                 FPSOverlay()
@@ -1146,7 +1140,7 @@ struct ContentView: View {
         logStore.log("  increased-memory-limit: \(ents.increasedMemory)", level: ents.increasedMemory ? .success : .debug)
         logStore.log("  extended-virtual-addressing: \(ents.extendedVA)", level: ents.extendedVA ? .success : .debug)
         if !ents.extendedVA {
-            logStore.log("  Tip: Use GetMoreRam to inject extended-virtual-addressing", level: .info)
+            logStore.log("  Compact Steam browser pools support the normal address limit.", level: .info)
         }
     }
 
@@ -2559,7 +2553,7 @@ struct SetupGuideView: View {
                     guideRow(
                         icon: "arrow.up.left.and.arrow.down.right",
                         title: "Extended Virtual Addressing",
-                        detail: "Expands virtual address space to ~64GB. Required for large games. Must be injected via GetMoreRam (free accounts can't provision this)."
+                        detail: "Optional for workloads needing a larger address space. The supported Steam browser uses compact pools within the normal iOS limit."
                     )
                 }
 

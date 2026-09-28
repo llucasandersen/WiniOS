@@ -25,6 +25,8 @@
 #include "config.h"
 #include "teb_tsd_patch.h"
 #include "jumbo_alignment.h"
+#include "cef_compact.h"
+#include <CommonCrypto/CommonDigest.h>
 #include "../madeira_cfg.h"   /* ml1095: one config file */
 #include <malloc/malloc.h>
 
@@ -8952,6 +8954,57 @@ static void *ios_share_probe_thread(void *arg)
  * legitimately log on normal threads stay silent on that one. */
 volatile int ios_in_mach_exc;
 
+static int ios_cef_sha_matches(const unsigned char *digest, const char *hex)
+{
+    static const char digits[] = "0123456789abcdef";
+    for (unsigned i = 0; i < CC_SHA256_DIGEST_LENGTH; ++i)
+        if (hex[i * 2] != digits[digest[i] >> 4] ||
+            hex[i * 2 + 1] != digits[digest[i] & 15]) return 0;
+    return 1;
+}
+
+/* Patch both the canonical x64 backing and every subsequent JIT copy. The
+ * initial code hash has no base relocations in the supported CEF .text. */
+static int ios_compact_cef_image(void *image, size_t image_size)
+{
+    const char *name = ios_pe_module_name(image, image_size);
+    const struct madeira_cef_compact *plan = NULL;
+    unsigned char hash[CC_SHA256_DIGEST_LENGTH];
+    unsigned char *text;
+    size_t protect_size;
+    unsigned count;
+    if (!name) return 0;
+    for (unsigned i = 0; i < sizeof(madeira_cef_compacts) / sizeof(madeira_cef_compacts[0]); ++i)
+        if (!strcmp(name, madeira_cef_compacts[i].name)) plan = &madeira_cef_compacts[i];
+    if (!plan) return 0;
+    if (image_size != plan->image_size || plan->text_rva >= image_size ||
+        plan->text_size > image_size - plan->text_rva) {
+        dprintf(2, "[cef-compact] %s unsupported image size; patch skipped\n", name);
+        return 0;
+    }
+    text = (unsigned char *)image + plan->text_rva;
+    CC_SHA256(text, plan->text_size, hash);
+    if (ios_cef_sha_matches(hash, plan->compact_sha)) return 0;
+    if (!ios_cef_sha_matches(hash, plan->original_sha) ||
+        !madeira_cef_compact_check(text, plan->text_size, plan)) {
+        dprintf(2, "[cef-compact] %s unsupported code hash; patch skipped\n", name);
+        return 0;
+    }
+    /* The section starts 4KB into a 16KB host page. Cover the header too,
+     * preserving R-only x64 backing after the patch (never native executable). */
+    protect_size = (plan->text_rva + (size_t)plan->text_size + 0x3fff) & ~(size_t)0x3fff;
+    if (mprotect(image, protect_size, PROT_READ | PROT_WRITE)) return -1;
+    count = madeira_cef_compact_apply(text, plan);
+    CC_SHA256(text, plan->text_size, hash);
+    if (mprotect(image, protect_size, PROT_READ)) return -1;
+    if (count != plan->mask_count || !ios_cef_sha_matches(hash, plan->compact_sha)) {
+        dprintf(2, "[cef-compact] %s post-patch verification FAILED; stopping module load\n", name);
+        return -1;
+    }
+    dprintf(2, "[cef-compact] %s verified: regular/BRP pools=2048MB masks=%u\n", name, count);
+    return 0;
+}
+
 static inline int mprotect_exec( void *base, size_t size, int unix_prot )
 {
     /* ml247: catch WHO narrows maxprot on pool pages.
@@ -9816,6 +9869,10 @@ static inline int mprotect_exec( void *base, size_t size, int unix_prot )
 
             /* Copy ENTIRE PE image to JIT pool (code + data + headers).
              * This preserves ADRP-based PC-relative references between sections. */
+            if (ios_compact_cef_image(image_base, image_size) < 0) {
+                errno = ENOEXEC;
+                return -1;
+            }
             ios_jit_scan_nonexec( "pre-memcpy", ios_pe_module_name( image_base, image_size ),
                                   (char *)jit_rx_base + offset, image_size );
             memcpy((char *)jit_rw_base + offset, image_base, image_size);
@@ -17365,7 +17422,7 @@ NTSTATUS WINAPI NtAllocateVirtualMemory( HANDLE process, PVOID *ret, ULONG_PTR z
                  * back three times, freed each time, then the fatal 32GB
                  * fallback). Walk the aligned slots in the usable top arena
                  * and try hint_offset-preserving fixed placements first. */
-                ULONG_PTR align_unit = 0x400000000ULL;              /* 16GB */
+                ULONG_PTR align_unit = madeira_jumbo_alignment(*size_ptr);
                 ULONG_PTR off = (ULONG_PTR)hint & (align_unit - 1);
                 ULONG_PTR slot;
                 /* ml106 packing rule: a guard-style reservation (off != 0,
@@ -17393,6 +17450,8 @@ NTSTATUS WINAPI NtAllocateVirtualMemory( HANDLE process, PVOID *ret, ULONG_PTR z
                     {
                         void *cand = (void *)(slot + off - align_unit);
                         SIZE_T csz = *size_ptr;
+                        if (!madeira_jumbo_range((uintptr_t)cand, csz,
+                                                (uintptr_t)host_addr_space_limit)) continue;
                         pick = cand;
                         st2 = allocate_virtual_memory( &pick, &csz, type, protect, 0, 0, 0, 0 );
                         dprintf(2, "[jumbo] cand guard slot=0x%llx -> %p size=0x%lx st=0x%x\n",
@@ -17405,6 +17464,8 @@ NTSTATUS WINAPI NtAllocateVirtualMemory( HANDLE process, PVOID *ret, ULONG_PTR z
                     void *cand = (void *)slot;
                     SIZE_T csz = *size_ptr;
                     if ((ULONG_PTR)cand < 0x6000000000ULL) break;
+                    if (!madeira_jumbo_range((uintptr_t)cand, csz,
+                                            (uintptr_t)host_addr_space_limit)) continue;
                     pick = cand;
                     st2 = allocate_virtual_memory( &pick, &csz, type, protect, 0, 0, 0, 0 );
                     dprintf(2, "[jumbo] cand plain slot=0x%llx size=0x%lx st=0x%x\n",
