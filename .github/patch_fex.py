@@ -5,7 +5,7 @@ import os
 print("Patching FEX CMakeLists.txt...")
 with open("FEX/CMakeLists.txt", "r", encoding="utf-8", errors="ignore") as f:
     s = f.read()
-s = s.replace("string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} processor)", "set(CMAKE_SYSTEM_PROCESSOR \"arm64\")\nstring(TOLOWER \"${CMAKE_SYSTEM_PROCESSOR}\" processor)")
+s = s.replace("string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} processor)", "string(TOLOWER \"${CMAKE_SYSTEM_PROCESSOR}\" processor)")
 with open("FEX/CMakeLists.txt", "w", encoding="utf-8") as f:
     f.write(s)
 

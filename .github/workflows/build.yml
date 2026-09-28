@@ -68,6 +68,45 @@ jobs:
           ls -lh FEXCore/Source/lib*.a
           cd ../..
 
+      - name: Test FEX loader callback reentrancy
+        run: |
+          clang++ -std=c++17 -pthread tools/test_fex_loader_guard.cpp -o /tmp/fex-loader-guard
+          /tmp/fex-loader-guard
+          python3 - <<'PY'
+          import subprocess
+          try:
+              result = subprocess.run(['/tmp/fex-loader-guard', 'unguarded'], timeout=2)
+              assert result.returncode != 0, 'The unguarded nested lock unexpectedly passed'
+          except subprocess.TimeoutExpired:
+              print('Reproduced unguarded nested-lock deadlock')
+          print('Guarded registration, nested gate preservation, and exception restoration passed')
+          PY
+
+      - name: Rebuild FEX ARM64EC loader module
+        run: |
+          mkdir -p toolchains
+          curl -fL --retry 3 https://github.com/mstorsjo/llvm-mingw/releases/download/20260421/llvm-mingw-20260421-ucrt-macos-universal.tar.xz -o /tmp/llvm-mingw.tar.xz
+          tar -xJf /tmp/llvm-mingw.tar.xz -C toolchains
+          export PATH="$PWD/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin:$PATH"
+          python3 .github/patch_fex_loader.py
+          cmake -S FEX -B FEX/build-arm64ec -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/FEX/Data/CMake/toolchain_mingw.cmake" \
+            -DMINGW_TRIPLE=arm64ec-w64-mingw32 \
+            -DFEX_IOS_HOST_BUILD=ON \
+            -DCMAKE_C_FLAGS=-DFEX_IOS_HOST=1 \
+            -DCMAKE_CXX_FLAGS=-DFEX_IOS_HOST=1 \
+            -DCMAKE_ASM_FLAGS=-DFEX_IOS_HOST=1 \
+            -DENABLE_FEX_ALLOCATOR=ON -DENABLE_JEMALLOC_GLIBC_ALLOC=ON \
+            -DENABLE_OFFLINE_RUNTIME=ON -DBUILD_FEXCONFIG=ON \
+            -DENABLE_CLANG_THUNKS=ON -DENABLE_CCACHE=OFF \
+            -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF \
+            -DENABLE_ASSERTIONS=OFF -DENABLE_LTO=OFF \
+            -DTUNE_CPU=none -DTUNE_ARCH=generic
+          cmake --build FEX/build-arm64ec --target arm64ecfex -j 3
+          cp FEX/build-arm64ec/Bin/libarm64ecfex.dll app/Madeira/arm64ec-windows/xtajit64.dll
+          shasum -a 256 app/Madeira/arm64ec-windows/xtajit64.dll
+
       - name: Fetch and Prepare VC++ Runtime
         run: |
           mkdir -p app/Madeira/x86_64-vcruntime
