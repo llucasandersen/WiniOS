@@ -3328,7 +3328,7 @@ struct MadeiraSettingsView: View {
                 Section("JIT memory") {
                     TextField("Pool size in MB", text: $poolMB)
                         .keyboardType(.numberPad)
-                    Text("Default: 896 MB. Allowed: 256?1152 MB. Smaller pools can run out during Steam startup; larger pools need more available memory. Changes apply after restarting Madeira.")
+                    Text("Default: 896 MB. Allowed: 256 to 1152 MB. Smaller pools can run out during Steam startup; larger pools need more available memory. Changes apply after restarting Madeira.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Diagnostics") {
