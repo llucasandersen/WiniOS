@@ -286,6 +286,9 @@
 				TargetAttributes = {
 					A5000001 = {
 						CreatedOnToolsVersion = 16.0;
+						SystemCapabilities = {
+							com.apple.ExtendedVirtualAddressing = { enabled = 1; };
+						};
 					};
 				};
 			};

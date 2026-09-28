@@ -922,6 +922,12 @@ struct ContentView: View {
             // it, never overlays on it.
             if let ents = entitlements {
                 entitlementBadges(ents)
+                if !ents.extendedVA {
+                    Text("Steam browser needs Extended Virtual Addressing. Enable this capability for the signing App ID and reinstall preserving app data. JIT and Memory+ do not enable it.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .padding(.horizontal)
+                }
             }
             HStack(spacing: 6) {
                 FPSOverlay()

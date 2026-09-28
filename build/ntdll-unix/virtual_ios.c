@@ -12750,10 +12750,9 @@ static void *get_host_addr_space_limit(void)
          * hint to be honoured. It is EXCLUSIVE, which is what is_beyond_limit()
          * wants, matching the ml122 note above.
          *
-         * Only ever RAISE the walk's answer, never lower it: the walk is proven
-         * on hardware, and a device reporting a small or bogus max_address must
-         * not shrink a limit that already works. Both values are logged so the
-         * two can be compared on any device. */
+         * Accept a valid kernel ceiling in either direction. The build 6
+         * device reports 63GB while the power-of-two walk rounds up to 64GB;
+         * accepting that rounded value admits unmappable ranges. */
         void *walked = (void *)(addr << 1);
         task_vm_info_data_t vmi;
         mach_msg_type_number_t cnt = TASK_VM_INFO_COUNT;
@@ -12762,9 +12761,11 @@ static void *get_host_addr_space_limit(void)
         {
             void *kern = (void *)(uintptr_t)vmi.max_address;
 
-            dprintf( 2, "[va-limit] ml749 walk=%p kernel_max=%p -> %s\n",
-                     walked, kern, kern > walked ? "USING KERNEL (walk underestimated)" : "keeping walk" );
-            if (kern > walked && (uintptr_t)kern >= 0x100000000ULL) return kern;
+            /* The walk rounds a 63GB map up to 64GB. The kernel's exclusive
+             * boundary is authoritative in both directions; using the rounded
+             * value can incorrectly accept a range beyond the task map. */
+            dprintf( 2, "[va-limit] kernel-bound walk=%p kernel_max=%p\n", walked, kern );
+            if ((uintptr_t)kern >= 0x100000000ULL) return kern;
         }
         else dprintf( 2, "[va-limit] ml749 walk=%p kernel_max=UNAVAILABLE -> keeping walk\n", walked );
 
@@ -17492,6 +17493,8 @@ NTSTATUS WINAPI NtAllocateVirtualMemory( HANDLE process, PVOID *ret, ULONG_PTR z
                     unsigned ci;
                     for (ci = 0; ci < 2 && st2; ci++)
                     {
+                        if (!madeira_jumbo_range(cage4_slots[ci], *size_ptr,
+                                                (uintptr_t)host_addr_space_limit)) continue;
                         if (ios_soft_slot_taken( cage4_slots[ci] )) continue;
                         if (ios_soft_n >= IOS_SOFT_MAX) break;
                         ios_soft[ios_soft_n].base = cage4_slots[ci];
@@ -17541,6 +17544,15 @@ NTSTATUS WINAPI NtAllocateVirtualMemory( HANDLE process, PVOID *ret, ULONG_PTR z
                     uint64_t slot;
                     for (slot = 0x7000000000ULL; slot < 0x8000000000ULL; slot += align_unit)
                     {
+                        uint64_t returned_base = off ? slot + off - align_unit : slot;
+                        if (!madeira_jumbo_range(returned_base, *size_ptr,
+                                                (uintptr_t)host_addr_space_limit))
+                        {
+                            dprintf(2, "[soft-pool] rejected outside host map: base=0x%llx size=0x%lx ceiling=%p\n",
+                                    (unsigned long long)returned_base, (unsigned long)*size_ptr,
+                                    host_addr_space_limit);
+                            continue;
+                        }
                         void *probe_addr = (void *)(uintptr_t)slot;
                         SIZE_T probe_sz = 0x10000;
                         NTSTATUS pst;

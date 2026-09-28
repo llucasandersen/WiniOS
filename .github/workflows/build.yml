@@ -289,8 +289,9 @@ jobs:
           install_name_tool -add_rpath "@executable_path/Frameworks" "$EXE" 2>/dev/null || true
           
           echo "=== Applying entitlements to Madeira.app ==="
-          codesign -s - --entitlements app/Madeira/Madeira.entitlements -f build/Payload/Madeira.app || true
-          codesign -d --entitlements :- build/Payload/Madeira.app || true
+          codesign -s - --entitlements app/Madeira/Madeira.entitlements -f build/Payload/Madeira.app
+          codesign -d --entitlements :- build/Payload/Madeira.app > /tmp/madeira-entitlements.plist
+          python3 -c 'import plistlib; e=plistlib.load(open("/tmp/madeira-entitlements.plist", "rb")); assert e.get("com.apple.developer.kernel.extended-virtual-addressing") is True; assert e.get("com.apple.developer.kernel.increased-memory-limit") is True; print("Verified Extended Virtual Addressing and Increased Memory Limit entitlements")'
           
           cd build
           zip -r -9 Madeira-Upstream-8c050d0-Debug.ipa Payload
