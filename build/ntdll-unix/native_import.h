@@ -82,6 +82,32 @@ static inline int madeira_native_import(const unsigned char *image, size_t size,
     return 0;
 }
 
+/* Wine export forwarding stubs are x64 RIP-relative jumps into the declared
+ * import address table. Follow only a bounded, aligned, nonzero IAT entry. */
+static inline int madeira_native_forward(const unsigned char *image, size_t size,
+    uint32_t source, uintptr_t *target)
+{
+    uint32_t pe, opt, iat, length;
+    int32_t displacement;
+    int64_t slot;
+    if (!image || !target || size < 64 || image[0] != 'M' || image[1] != 'Z') return 0;
+    pe = madeira_image_u32(image, 0x3c);
+    if (!madeira_image_span(size, pe, 24 + 0xe0) || madeira_image_u32(image, pe) != 0x4550) return 0;
+    opt = pe + 24;
+    if (image[opt] != 0x0b || image[opt + 1] != 2 || madeira_image_u32(image, opt + 108) <= 12) return 0;
+    iat = madeira_image_u32(image, opt + 112 + 12 * 8);
+    length = madeira_image_u32(image, opt + 112 + 12 * 8 + 4);
+    if (!iat || !madeira_image_span(size, iat, length) ||
+        !madeira_image_span(size, source, 6) || image[source] != 0xff || image[source + 1] != 0x25) return 0;
+    memcpy(&displacement, image + source + 2, 4);
+    slot = (int64_t)source + 6 + displacement;
+    if (slot < iat || slot - iat > length || length - (size_t)(slot - iat) < 8 || (slot & 7)) return 0;
+    uintptr_t value = (uintptr_t)madeira_image_u64(image, (size_t)slot);
+    if (!value) return 0;
+    *target = value;
+    return 1;
+}
+
 static inline int madeira_native_dispatch_slots(const unsigned char *image, size_t size,
     uintptr_t parent, uintptr_t alias, uint32_t slots[3])
 {

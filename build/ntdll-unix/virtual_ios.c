@@ -19165,33 +19165,49 @@ NTSTATUS WINAPI NtFreeVirtualMemory( HANDLE process, PVOID *addr_ptr, SIZE_T *si
 __attribute__((used, noinline)) uintptr_t ios_fex_native_call_target(uintptr_t value)
 {
     void *owner = ios_jit_current_peb();
-    for (int i = 0; i < ios_jit_mapping_count; ++i)
+    /* Bound forwarding chains, including malformed cycles. */
+    for (unsigned hop = 0; hop < 8; ++hop)
     {
-        struct ios_jit_mapping *target = &ios_jit_mappings[i];
-        uintptr_t parent = (uintptr_t)target->pe_base;
-        uintptr_t alias = (uintptr_t)target->jit_base;
-        uintptr_t offset;
-        uint32_t native;
-        const unsigned char *image;
-        if (value >= parent && value - parent < target->size) offset = value - parent;
-        else if (value >= alias && value - alias < target->size) offset = value - alias;
-        else continue;
-        image = (const unsigned char *)ios_jit_rw_base_global + alias - (uintptr_t)ios_jit_rx_base_global;
-        if (offset <= UINT32_MAX && madeira_native_import(image, target->size,
-                parent, alias, (uint32_t)offset, &native))
+        int followed = 0;
+        for (int i = 0; i < ios_jit_mapping_count; ++i)
         {
-            uintptr_t resolved = (uintptr_t)ios_jit_translate_addr_for_owner((void *)(parent + native), owner);
-            if (resolved != parent + native)
+            struct ios_jit_mapping *target = &ios_jit_mappings[i];
+            uintptr_t parent = (uintptr_t)target->pe_base;
+            uintptr_t alias = (uintptr_t)target->jit_base;
+            uintptr_t offset;
+            uint32_t native;
+            const unsigned char *image;
+            if (value >= parent && value - parent < target->size) offset = value - parent;
+            else if (value >= alias && value - alias < target->size) offset = value - alias;
+            else continue;
+            image = (const unsigned char *)ios_jit_rw_base_global + alias - (uintptr_t)ios_jit_rx_base_global;
+            if (offset <= UINT32_MAX && madeira_native_import(image, target->size,
+                    parent, alias, (uint32_t)offset, &native))
             {
-                static unsigned long redirected_count;
-                unsigned long sequence = __sync_add_and_fetch(&redirected_count, 1);
-                if (sequence <= 32)
-                    dprintf(2, "[fex-native-call] source=%p native=%p [#%lu]\n",
-                            (void *)value, (void *)resolved, sequence);
-                return resolved;
+                uintptr_t resolved = (uintptr_t)ios_jit_translate_addr_for_owner((void *)(parent + native), owner);
+                if (resolved != parent + native)
+                {
+                    static unsigned long redirected_count;
+                    unsigned long sequence = __sync_add_and_fetch(&redirected_count, 1);
+                    if (sequence <= 32)
+                        dprintf(2, "[fex-native-call] source=%p native=%p [#%lu]\n",
+                                (void *)value, (void *)resolved, sequence);
+                    return resolved;
+                }
             }
+            uintptr_t forwarded;
+            if (offset <= UINT32_MAX && madeira_native_forward(image, target->size, (uint32_t)offset, &forwarded))
+            {
+                if (forwarded == value) return value;
+                static unsigned long forward_count;
+                if (__sync_add_and_fetch(&forward_count, 1) <= 32)
+                    dprintf(2, "[fex-native-forward] source=%p target=%p\n", (void *)value, (void *)forwarded);
+                value = forwarded;
+                followed = 1;
+            }
+            break;
         }
-        break;
+        if (!followed) break;
     }
     /* Already-native targets and unix functions need no export redirection. */
     return value;

@@ -45,16 +45,48 @@ static void fixture(void)
         assert(!madeira_native_import(image,size,parent,alias,0x600,&native));
     puts("Native import bounds, exact-match, non-EC and pointer-form tests passed");
 }
+static void forwarding_fixture(void)
+{
+    unsigned char image[2048] = {0}; uintptr_t target = 123;
+    image[0]='M'; image[1]='Z'; u32(image,0x3c,0x80); u32(image,0x80,0x4550);
+    image[0x98]=0x0b; image[0x99]=2; u32(image,0x98+108,16);
+    u32(image,0x98+112+96,0x500); u32(image,0x98+112+100,16);
+    image[0x600]=0xff; image[0x601]=0x25; u32(image,0x602,(uint32_t)(0x500-0x606));
+    u64(image,0x500,0x3069120a0ULL);
+    assert(madeira_native_forward(image,sizeof(image),0x600,&target) && target==0x3069120a0ULL);
+    target=123; u32(image,0x602,(uint32_t)(0x4f8-0x606));
+    assert(!madeira_native_forward(image,sizeof(image),0x600,&target) && target==123);
+    u32(image,0x602,(uint32_t)(0x50c-0x606));
+    assert(!madeira_native_forward(image,sizeof(image),0x600,&target));
+    u32(image,0x602,(uint32_t)(0x504-0x606));
+    assert(!madeira_native_forward(image,sizeof(image),0x600,&target));
+    u32(image,0x602,(uint32_t)(0x500-0x606)); u64(image,0x500,0);
+    assert(!madeira_native_forward(image,sizeof(image),0x600,&target));
+    u64(image,0x500,1); image[0x601]=0x15;
+    assert(!madeira_native_forward(image,sizeof(image),0x600,&target));
+    image[0x601]=0x25;
+    for(size_t size=0;size<0x606;++size) assert(!madeira_native_forward(image,size,0x600,&target));
+    puts("Forwarding stub IAT bounds, alignment, null and opcode tests passed");
+}
 int main(int argc, char **argv)
 {
     fixture();
-    if (argc == 4)
+    forwarding_fixture();
+    if (argc == 4 || argc == 5)
     {
         FILE *f=fopen(argv[1],"rb"); assert(f);
         assert(!fseek(f,0,SEEK_END)); long length=ftell(f); assert(length>0 && length<(64L<<20));
         rewind(f); unsigned char *image=malloc((size_t)length); assert(image);
         assert(fread(image,1,(size_t)length,f)==(size_t)length); fclose(f);
         uint32_t source=(uint32_t)strtoul(argv[2],NULL,0), expected=(uint32_t)strtoul(argv[3],NULL,0), native=0;
+        if (argc == 5)
+        {
+            uintptr_t forwarded=0;
+            assert(madeira_native_forward(image,(size_t)length,source,&forwarded));
+            assert(forwarded==expected);
+            printf("Actual bundled forwarding stub 0x%x resolves to IAT target 0x%x\n",source,expected);
+            free(image); return 0;
+        }
         assert(madeira_native_import(image,(size_t)length,0xfba0c0000ULL,0x306890000ULL,source,&native));
         assert(native==expected);
         printf("Actual bundled export 0x%x redirects to native 0x%x\n",source,native);
