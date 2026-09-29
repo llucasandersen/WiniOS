@@ -19,6 +19,12 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
+      - name: Select upstream allocator list fixes
+        run: |
+          git -C FEX/External/rpmalloc fetch origin 2dc128f9aebb1bf1b525399612738a368569aed7
+          git -C FEX/External/rpmalloc checkout --detach 2dc128f9aebb1bf1b525399612738a368569aed7
+          test "$(git -C FEX/External/rpmalloc rev-parse HEAD)" = 2dc128f9aebb1bf1b525399612738a368569aed7
+
       - name: Select Xcode 16
         run: |
           sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer || \
@@ -42,6 +48,11 @@ jobs:
           for dep in fmt xxhash range-v3 unordered_dense vixl rpmalloc; do
             test -d "FEX/External/$dep" || { echo "Missing FEX dependency: $dep"; exit 1; }
           done
+
+      - name: Test upstream allocator page list invariants
+        run: |
+          clang -std=c11 -O1 -g -fsanitize=address,undefined tools/test_rpmalloc_available.c -lpthread -o /tmp/test_rpmalloc_available
+          /tmp/test_rpmalloc_available
 
       - name: Test constrained jumbo alignment
         run: |
