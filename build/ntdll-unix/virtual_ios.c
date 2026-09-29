@@ -27,6 +27,7 @@
 #include "jumbo_alignment.h"
 #include "cef_compact.h"
 #include "jit_protect_alias.h"
+#include "native_import.h"
 #include <CommonCrypto/CommonDigest.h>
 #include "../madeira_cfg.h"   /* ml1095: one config file */
 #include <malloc/malloc.h>
@@ -19155,6 +19156,81 @@ NTSTATUS WINAPI NtFreeVirtualMemory( HANDLE process, PVOID *addr_ptr, SIZE_T *si
 }
 
 
+#ifdef WINE_IOS
+#include "native_call_bridge.h"
+
+/* Resolve runtime calls, including GetProcAddress results such as rpmalloc's
+ * VirtualAlloc2. FEX's NTDLL-only checker cannot redirect that kernelbase
+ * fast-forward stub. No application dispatch slots or executable bytes change. */
+__attribute__((used, noinline)) uintptr_t ios_fex_native_call_target(uintptr_t value)
+{
+    void *owner = ios_jit_current_peb();
+    for (int i = 0; i < ios_jit_mapping_count; ++i)
+    {
+        struct ios_jit_mapping *target = &ios_jit_mappings[i];
+        uintptr_t parent = (uintptr_t)target->pe_base;
+        uintptr_t alias = (uintptr_t)target->jit_base;
+        uintptr_t offset;
+        uint32_t native;
+        const unsigned char *image;
+        if (value >= parent && value - parent < target->size) offset = value - parent;
+        else if (value >= alias && value - alias < target->size) offset = value - alias;
+        else continue;
+        image = (const unsigned char *)ios_jit_rw_base_global + alias - (uintptr_t)ios_jit_rx_base_global;
+        if (offset <= UINT32_MAX && madeira_native_import(image, target->size,
+                parent, alias, (uint32_t)offset, &native))
+        {
+            uintptr_t resolved = (uintptr_t)ios_jit_translate_addr_for_owner((void *)(parent + native), owner);
+            if (resolved != parent + native)
+            {
+                static unsigned long redirected_count;
+                unsigned long sequence = __sync_add_and_fetch(&redirected_count, 1);
+                if (sequence <= 32)
+                    dprintf(2, "[fex-native-call] source=%p native=%p [#%lu]\n",
+                            (void *)value, (void *)resolved, sequence);
+                return resolved;
+            }
+        }
+        break;
+    }
+    /* Already-native targets and unix functions need no export redirection. */
+    return value;
+}
+
+static void ios_fex_install_native_checker(void *live_alias)
+{
+    uintptr_t requested = (uintptr_t)live_alias;
+    for (int i = 0; i < ios_jit_mapping_count; ++i)
+    {
+        struct ios_jit_mapping *runtime = &ios_jit_mappings[i];
+        uintptr_t alias = (uintptr_t)runtime->jit_base;
+        uintptr_t checker = (uintptr_t)&madeira_native_call_checker;
+        unsigned char *image;
+        const char *name;
+        uint32_t slots[3];
+        if (requested < alias || requested - alias >= runtime->size) continue;
+        name = ios_pe_module_name(runtime->pe_base, runtime->size);
+        if (!name || (strcmp(name, "libarm64ecfex.dll") && strcmp(name, "xtajit64.dll"))) return;
+        image = (unsigned char *)ios_jit_rw_base_global + alias - (uintptr_t)ios_jit_rx_base_global;
+        if (!madeira_native_dispatch_slots(image, runtime->size, (uintptr_t)runtime->pe_base, alias, slots))
+        {
+            dprintf(2, "[fex-native-checker] invalid runtime metadata; slots unchanged\n");
+            return;
+        }
+        int changed = 0;
+        for (unsigned slot = 0; slot < 3; ++slot)
+        {
+            if (madeira_image_u64(image, slots[slot]) == checker) continue;
+            memcpy(image + slots[slot], &checker, sizeof(checker));
+            ++changed;
+        }
+        if (changed)
+            dprintf(2, "[fex-native-checker] runtime=%p installed=%d slots\n", (void *)alias, changed);
+        return;
+    }
+}
+#endif
+
 /***********************************************************************
  *             NtProtectVirtualMemory   (NTDLL.@)
  *             ZwProtectVirtualMemory   (NTDLL.@)
@@ -19315,6 +19391,7 @@ NTSTATUS WINAPI NtProtectVirtualMemory( HANDLE process, PVOID *addr_ptr, SIZE_T 
             static unsigned long alias_protect_count;
             unsigned long sequence = __sync_add_and_fetch(&alias_protect_count, 1);
             *addr_ptr = (void *)alias_result.address;
+            ios_fex_install_native_checker(ios_jit_orig_addr);
             if (sequence <= 24)
                 dprintf(2, "[jit-protect] live alias %p parent=%p size=0x%lx prot=0x%x preserved [#%lu]\n",
                         *addr_ptr, base, (unsigned long)size, new_prot, sequence);

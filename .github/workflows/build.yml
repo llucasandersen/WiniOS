@@ -66,6 +66,13 @@ jobs:
           clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tools/test_jit_protect_alias.c -o /tmp/test_jit_protect_alias
           /tmp/test_jit_protect_alias
 
+      - name: Test runtime native import routing
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tools/test_native_import.c -o /tmp/test_native_import
+          python3 tools/test_native_import_binary.py /tmp/test_native_import
+          clang -std=c11 -Wall -Wextra -Werror tools/test_native_call_bridge.c -o /tmp/test_native_call_bridge
+          /tmp/test_native_call_bridge
+
       - name: Test Wine prefix extraction
         run: python3 tools/test_prefix_extractor.py
 
