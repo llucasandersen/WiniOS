@@ -17,6 +17,13 @@ static int WriteFile(void *handle, const void *buffer, unsigned long length,
 }
 #include "../FEX/External/rpmalloc/rpmalloc/rpmalloc.c"
 
+volatile int FEX_AllocWatch_Armed;
+void FEX_AllocWatch_Event(const void *pointer, unsigned int event)
+{
+    (void)pointer; (void)event;
+    assert(!"Unexpected allocator watch event in list-transition test");
+}
+
 int main(void)
 {
     heap_t *heap = calloc(1, sizeof(*heap));
