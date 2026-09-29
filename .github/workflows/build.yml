@@ -61,6 +61,11 @@ jobs:
       - name: Test JIT runtime readiness
         run: python3 tools/test_jit_readiness.py
 
+      - name: Test live JIT protection preservation
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tools/test_jit_protect_alias.c -o /tmp/test_jit_protect_alias
+          /tmp/test_jit_protect_alias
+
       - name: Test Wine prefix extraction
         run: python3 tools/test_prefix_extractor.py
 

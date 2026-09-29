@@ -26,6 +26,7 @@
 #include "teb_tsd_patch.h"
 #include "jumbo_alignment.h"
 #include "cef_compact.h"
+#include "jit_protect_alias.h"
 #include <CommonCrypto/CommonDigest.h>
 #include "../madeira_cfg.h"   /* ml1095: one config file */
 #include <malloc/malloc.h>
@@ -19296,6 +19297,29 @@ NTSTATUS WINAPI NtProtectVirtualMemory( HANDLE process, PVOID *addr_ptr, SIZE_T 
          * are detected and redirected to the RW alias. Writes via RW alias
          * remain visible to subsequent reads via the RX alias because the
          * dual-mapping is preserved.) */
+
+        /* A caller protecting the live JIT alias also writes through that
+         * alias. Its parent image is not the source of those writes. In
+         * particular, FEX's WriteModuleRVA protects an eight-byte dispatcher
+         * slot, writes CheckCall, then restores the rounded protection range.
+         * Returning a parent address here made that restore copy the stale
+         * Wine dispatcher over CheckCall (all three slots in the Steam dump).
+         * Keep the returned address in the caller's alias and leave its live
+         * contents intact. Parent-image loader requests still synchronize
+         * below. Do not change the RX/RW dual mapping or copy executable code.
+         */
+        struct madeira_jit_protection_result alias_result = madeira_jit_protection_result(
+            (uintptr_t)ios_jit_orig_addr, (uintptr_t)addr, (uintptr_t)base);
+        if (!alias_result.sync_parent)
+        {
+            static unsigned long alias_protect_count;
+            unsigned long sequence = __sync_add_and_fetch(&alias_protect_count, 1);
+            *addr_ptr = (void *)alias_result.address;
+            if (sequence <= 24)
+                dprintf(2, "[jit-protect] live alias %p parent=%p size=0x%lx prot=0x%x preserved [#%lu]\n",
+                        *addr_ptr, base, (unsigned long)size, new_prot, sequence);
+            return status;
+        }
 
         /* After import resolution: PE loader makes IAT writable, fills it, then
          * restores protection. When write access is removed from a JIT-mapped region,
